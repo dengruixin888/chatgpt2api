@@ -31,6 +31,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   createAccounts,
   finishOAuthLogin,
+  importRefreshTokens,
   startOAuthLogin,
   type Account,
   type AccountImportPayload,
@@ -38,7 +39,7 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type ImportMethod = "menu" | "token" | "session" | "codex-auth" | "cpa" | "oauth";
+type ImportMethod = "menu" | "token" | "refresh-token" | "session" | "codex-auth" | "cpa" | "oauth";
 
 type AccountImportDialogProps = {
   disabled?: boolean;
@@ -160,6 +161,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
   const [open, setOpen] = useState(false);
   const [method, setMethod] = useState<ImportMethod>("menu");
   const [tokenInput, setTokenInput] = useState("");
+  const [refreshTokenInput, setRefreshTokenInput] = useState("");
   const [sessionInput, setSessionInput] = useState("");
   const [codexAuthInput, setCodexAuthInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -176,6 +178,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
   const resetState = () => {
     setMethod("menu");
     setTokenInput("");
+    setRefreshTokenInput("");
     setSessionInput("");
     setCodexAuthInput("");
     setPendingCpaImport(null);
@@ -231,6 +234,37 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
   };
 
   // 起授权：拿 authorize URL，立刻在新窗口打开，方便用户登录
+  const handleImportRefreshTokenText = async () => {
+    const refreshTokens = splitTokens(refreshTokenInput);
+    if (refreshTokens.length === 0) {
+      toast.error("请先提供至少一个 Refresh Token");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const data = await importRefreshTokens(refreshTokens);
+      onImported(data.items);
+      setOpen(false);
+      resetState();
+      if ((data.errors?.length ?? 0) > 0) {
+        const firstError = data.errors?.[0]?.error;
+        toast.error(
+          `Refresh Token 导入完成，新增 ${data.added ?? 0} 个，刷新 ${data.refreshed ?? 0} 个，失败 ${data.errors?.length ?? 0} 个${firstError ? `，首个错误：${firstError}` : ""}`,
+        );
+      } else {
+        toast.success(
+          `Refresh Token 导入完成，新增 ${data.added ?? 0} 个，跳过 ${data.skipped ?? 0} 个重复项，已自动刷新账号信息`,
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "导入 Refresh Token 失败";
+      toast.error(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleStartOAuth = async () => {
     setOauthStarting(true);
     try {
@@ -686,6 +720,37 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
       );
     }
 
+    if (method === "refresh-token") {
+      const refreshTokenCount = splitTokens(refreshTokenInput).length;
+      return (
+        <div className="space-y-4">
+          <button
+            type="button"
+            onClick={() => setMethod("menu")}
+            className="inline-flex items-center gap-1 text-sm text-stone-500 transition hover:text-stone-800"
+          >
+            <ArrowLeft className="size-4" />
+            返回导入方式
+          </button>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-stone-700">Refresh Token 列表</label>
+            <Textarea
+              placeholder="每行一个 Refresh Token..."
+              value={refreshTokenInput}
+              onChange={(event) => setRefreshTokenInput(event.target.value)}
+              className="min-h-56 resize-none rounded-xl border-stone-200"
+            />
+          </div>
+          <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 p-4">
+            <div className="text-sm font-medium text-stone-800">直接导入 Refresh Token</div>
+            <div className="text-sm leading-6 text-stone-500">
+              系统会自动用 Refresh Token 换回 Access Token，并写入账号池。当前识别 {refreshTokenCount} 个。
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-3">
         <MethodCard
@@ -699,6 +764,12 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
           description="支持直接粘贴，一行一个；也支持从 TXT 文件读取，一行一个。"
           icon={KeyRound}
           onClick={() => setMethod("token")}
+        />
+        <MethodCard
+          title="导入 Refresh Token"
+          description="粘贴一行一个 Refresh Token，系统会自动换回 Access Token 并落盘。"
+          icon={KeyRound}
+          onClick={() => setMethod("refresh-token")}
         />
         <MethodCard
           title="导入 Session JSON"
@@ -762,6 +833,8 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
                 ? "导入账户"
                 : method === "token"
                   ? "导入 Access Token"
+                  : method === "refresh-token"
+                    ? "导入 Refresh Token"
                   : method === "session"
                     ? "导入 Session JSON"
                     : method === "codex-auth"
@@ -775,6 +848,8 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
                 ? "选择一种导入方式。导入成功后会自动拉取邮箱、类型和额度。"
                 : method === "token"
                   ? "支持手动粘贴或从 TXT 文件导入，一行一个 Token。"
+                  : method === "refresh-token"
+                    ? "粘贴 Refresh Token 后，系统会自动换回 Access Token 并落盘。"
                   : method === "session"
                     ? "粘贴完整 Session JSON，系统会自动提取 accessToken。"
                     : method === "codex-auth"
@@ -804,6 +879,16 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
               >
                 {isSubmitting ? <LoaderCircle className="size-4 animate-spin" /> : null}
                 导入 Token
+              </Button>
+            ) : null}
+            {method === "refresh-token" ? (
+              <Button
+                className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
+                onClick={() => void handleImportRefreshTokenText()}
+                disabled={footerDisabled}
+              >
+                {isSubmitting ? <LoaderCircle className="size-4 animate-spin" /> : null}
+                导入 Refresh Token
               </Button>
             ) : null}
             {method === "session" ? (

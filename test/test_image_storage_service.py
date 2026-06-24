@@ -74,7 +74,7 @@ class ImageStorageServiceTests(unittest.TestCase):
 
         self.assertEqual(stored.storage, "local")
         self.assertTrue((self.images_dir / stored.rel).is_file())
-        self.assertEqual(stored.url, f"http://app.test/images/{stored.rel}")
+        self.assertEqual(stored.url, f"/images/{stored.rel}")
 
     def test_webdav_mode_uploads_without_local_file(self):
         self.settings.update({
@@ -120,6 +120,16 @@ class ImageStorageServiceTests(unittest.TestCase):
         self.assertTrue((self.images_dir / stored.rel).is_file())
         self.assertIn(stored.rel, FakeWebDAVClient.uploaded)
         self.assertEqual(stored.url, f"https://cdn.example.test/images/{stored.rel}")
+
+    def test_local_mode_list_items_returns_relative_url(self):
+        image = png_bytes()
+        image_path = self.images_dir / "2026" / "05" / "07" / "sample.png"
+        image_path.parent.mkdir(parents=True, exist_ok=True)
+        image_path.write_bytes(image)
+
+        items = self.service().list_items("http://app.test")
+
+        self.assertEqual(items[0]["url"], f"/images/{items[0]['rel']}")
 
     def test_test_webdav_writes_and_deletes_probe_file(self):
         self.settings.update({

@@ -96,6 +96,8 @@ def is_connection_timeout_error(message: str) -> bool:
     text = str(message or "").lower()
     return (
         "curl: (28)" in text
+        or "incompleteread" in text
+        or "incomplete read" in text
         or "operation timed out" in text
         or "connection timed out" in text
         or "read timed out" in text

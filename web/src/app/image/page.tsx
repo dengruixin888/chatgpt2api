@@ -8,6 +8,7 @@ import { ImageComposer } from "@/app/image/components/image-composer";
 import { ImageResults, type ImageLightboxItem } from "@/app/image/components/image-results";
 import { ImageSidebar } from "@/app/image/components/image-sidebar";
 import { ImageLightbox } from "@/components/image-lightbox";
+import { getManagedImageUrl } from "@/components/image-thumbnail";
 import {
   Dialog,
   DialogContent,
@@ -191,7 +192,7 @@ async function buildReferenceImageFromStoredImage(image: StoredImage, fileName: 
   if (!image.url) {
     return null;
   }
-  const file = await fetchImageAsFile(image.url, fileName);
+  const file = await fetchImageAsFile(getManagedImageUrl(image.url), fileName);
   return {
     referenceImage: {
       name: file.name,

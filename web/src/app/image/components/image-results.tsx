@@ -3,6 +3,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { Clock3, Download, EyeOff, LoaderCircle, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 
+import { getManagedImageUrl } from "@/components/image-thumbnail";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ImageConversation, ImageTurnStatus, StoredImage, StoredReferenceImage } from "@/store/image-conversations";
@@ -44,7 +45,7 @@ function getStoredImageSrc(image: StoredImage) {
     }
     return url;
   }
-  return image.url || "";
+  return getManagedImageUrl(image.url || "");
 }
 
 async function downloadStoredImage(image: StoredImage, index: number) {
@@ -57,7 +58,7 @@ async function downloadStoredImage(image: StoredImage, index: number) {
       blob = new Blob([bytes], { type: "image/png" });
     } else if (image.url) {
       // 确保 URL 是绝对路径
-      const url = image.url.startsWith("http") ? image.url : `${window.location.origin}${image.url}`;
+      const url = getManagedImageUrl(image.url);
       const res = await fetch(url);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -70,7 +71,7 @@ async function downloadStoredImage(image: StoredImage, index: number) {
     console.error("Failed to download image:", err);
     // 如果 fetch 失败，尝试直接在新窗口打开
     if (image.url) {
-      window.open(image.url, "_blank");
+      window.open(getManagedImageUrl(image.url), "_blank");
     }
     return;
   }

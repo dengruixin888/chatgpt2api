@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ImageLightbox } from "@/components/image-lightbox";
-import { ImageThumbnail, getImageThumbnailUrl } from "@/components/image-thumbnail";
+import { ImageThumbnail, getImageThumbnailUrl, getManagedImageUrl } from "@/components/image-thumbnail";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -234,7 +234,11 @@ function LogsContent() {
                                   onClick={() => openLogImage(item, imageIndex)}
                                   title="预览图片"
                                 >
-                                  <ImageThumbnail src={url} thumbnailSrc={getImageThumbnailUrl(url)} className="h-full w-full" />
+                                  <ImageThumbnail
+                                    src={getManagedImageUrl(url)}
+                                    thumbnailSrc={getImageThumbnailUrl(getManagedImageUrl(url))}
+                                    className="h-full w-full"
+                                  />
                                 </button>
                               ))}
                               {urls.length > 3 ? <span className="text-xs text-stone-400">+{urls.length - 3}</span> : null}
@@ -305,7 +309,7 @@ function LogsContent() {
                         setLightboxOpen(true);
                       }}
                     >
-                      <img src={url} alt="" className="h-full w-full object-cover" />
+                        <img src={getManagedImageUrl(url)} alt="" className="h-full w-full object-cover" />
                     </button>
                   ))}
                 </div>

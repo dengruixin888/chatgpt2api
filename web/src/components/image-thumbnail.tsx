@@ -19,6 +19,31 @@ export function getImageThumbnailUrl(src: string) {
   return `${src.slice(0, index)}/image-thumbnails/${src.slice(index + marker.length)}`;
 }
 
+function getWindowOrigin() {
+  return typeof window === "undefined" ? "" : window.location.origin;
+}
+
+export function getManagedImageUrl(src: string) {
+  if (!src || src.startsWith("data:") || src.startsWith("blob:")) return src;
+
+  const origin = getWindowOrigin();
+  if (!origin) return src;
+
+  try {
+    const url = new URL(src, origin);
+    const marker = url.pathname.includes("/images/")
+      ? "/images/"
+      : url.pathname.includes("/image-thumbnails/")
+        ? "/image-thumbnails/"
+        : "";
+    if (!marker) return src;
+    const index = url.pathname.indexOf(marker);
+    return `${origin}${url.pathname.slice(index)}${url.search}${url.hash}`;
+  } catch {
+    return src;
+  }
+}
+
 export function ImageThumbnail({ src, thumbnailSrc, alt = "", className, imageClassName }: ImageThumbnailProps) {
   const initialSrc = useMemo(() => thumbnailSrc || getImageThumbnailUrl(src), [src, thumbnailSrc]);
   const [currentSrc, setCurrentSrc] = useState(initialSrc);
@@ -36,8 +61,9 @@ export function ImageThumbnail({ src, thumbnailSrc, alt = "", className, imageCl
         loading="lazy"
         decoding="async"
         onError={() => {
-          if (currentSrc !== src) {
-            setCurrentSrc(src);
+          const fallbackSrc = getManagedImageUrl(src);
+          if (currentSrc !== fallbackSrc) {
+            setCurrentSrc(fallbackSrc);
           }
         }}
       />

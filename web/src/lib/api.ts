@@ -76,6 +76,16 @@ type AccountMutationResponse = {
   errors?: Array<{ access_token: string; error: string }>;
 };
 
+type RefreshTokenImportResponse = {
+  items: Account[];
+  added?: number;
+  skipped?: number;
+  refreshed?: number;
+  errors?: Array<{ refresh_token: string; error: string }>;
+};
+
+export type AccountExportFormat = "json" | "zip" | "cpa" | "sub";
+
 export type AccountRefreshResponse = {
   items: Account[];
   refreshed: number;
@@ -325,6 +335,22 @@ export async function createAccounts(tokens: string[], accounts: AccountImportPa
     method: "POST",
     body: { tokens, accounts },
   });
+}
+
+export async function importRefreshTokens(refreshTokens: string[]) {
+  return httpRequest<RefreshTokenImportResponse>("/api/accounts/refresh-tokens", {
+    method: "POST",
+    body: { refresh_tokens: refreshTokens },
+  });
+}
+
+export async function exportAccounts(accessTokens: string[], format: AccountExportFormat = "json") {
+  const response = await request.post(
+    "/api/accounts/export",
+    { access_tokens: accessTokens, format },
+    { responseType: "blob" },
+  );
+  return response.data as Blob;
 }
 
 export type OAuthLoginStartResponse = {

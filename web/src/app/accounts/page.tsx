@@ -5,12 +5,14 @@ import type { ComponentProps } from "react";
 import {
   Ban,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
   CircleOff,
   Copy,
   Download,
+  FileJson,
   Link2,
   LoaderCircle,
   LogIn,
@@ -35,6 +37,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -44,6 +47,7 @@ import {
 } from "@/components/ui/select";
 import {
   deleteAccounts,
+  exportAccounts,
   fetchAccounts,
   fetchModels,
   fetchRefreshProgress,
@@ -57,6 +61,7 @@ import {
   type AccountStatus,
   type Model,
   type RefreshProgressResponse,
+  type AccountExportFormat,
 } from "@/lib/api";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { cn } from "@/lib/utils";
@@ -159,13 +164,20 @@ function maskToken(token?: string) {
   return `${token.slice(0, 16)}...${token.slice(-8)}`;
 }
 
-function downloadTokens(accounts: Account[]) {
-  const content = `${accounts.map((account) => account.access_token).join("\n")}\n`;
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+async function downloadAccounts(accounts: Account[], format: AccountExportFormat) {
+  const tokens = accounts.map((account) => account.access_token);
+  const blob = await exportAccounts(tokens, format);
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `accounts-${Date.now()}.txt`;
+  link.download =
+    format === "sub"
+      ? `accounts-${Date.now()}.json`
+      : format === "cpa"
+        ? `accounts-${Date.now()}.tar`
+        : format === "zip"
+          ? `accounts-${Date.now()}.zip`
+          : `accounts-${Date.now()}.json`;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -190,6 +202,7 @@ function AccountsPageContent() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [exportOpen, setExportOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<AccountStatus | "all">("all");
@@ -772,15 +785,54 @@ function AccountsPageContent() {
               setPage(1);
             }}
           />
-          <Button
-            variant="outline"
-            className="h-10 rounded-xl border-stone-200 bg-white/80 px-4 text-stone-700 hover:bg-white"
-            onClick={() => downloadTokens(accounts)}
-            disabled={accounts.length === 0}
-          >
-            <Download className="size-4" />
-            导出全部 Token
-          </Button>
+          <Popover open={exportOpen} onOpenChange={setExportOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-10 rounded-xl border-stone-200 bg-white/80 px-4 text-stone-700 hover:bg-white"
+                disabled={accounts.length === 0}
+              >
+                <Download className="size-4" />
+                导出
+                <ChevronDown className="size-4 text-stone-400" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-48 p-2">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-stone-700 transition hover:bg-stone-100"
+                onClick={() => {
+                  setExportOpen(false);
+                  void downloadAccounts(accounts, "json");
+                }}
+              >
+                <Download className="size-4" />
+                导出 Token
+              </button>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-stone-700 transition hover:bg-stone-100"
+                onClick={() => {
+                  setExportOpen(false);
+                  void downloadAccounts(accounts, "cpa");
+                }}
+              >
+                <FileJson className="size-4" />
+                导出 CPA
+              </button>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-stone-700 transition hover:bg-stone-100"
+                onClick={() => {
+                  setExportOpen(false);
+                  void downloadAccounts(accounts, "sub");
+                }}
+              >
+                <FileJson className="size-4" />
+                导出 sub2api
+              </button>
+            </PopoverContent>
+          </Popover>
         </div>
       </section>
 

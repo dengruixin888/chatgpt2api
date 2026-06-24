@@ -6,6 +6,7 @@ import json
 import re
 import uuid
 import zipfile
+import tarfile
 from datetime import datetime
 from typing import Any, Literal
 
@@ -50,6 +51,10 @@ class AccountCreateRequest(BaseModel):
     accounts: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class RefreshTokenImportRequest(BaseModel):
+    refresh_tokens: list[str] = Field(default_factory=list)
+
+
 class AccountDeleteRequest(BaseModel):
     tokens: list[str] = Field(default_factory=list)
 
@@ -60,7 +65,7 @@ class AccountRefreshRequest(BaseModel):
 
 class AccountExportRequest(BaseModel):
     access_tokens: list[str] = Field(default_factory=list)
-    format: Literal["json", "zip"] = "json"
+    format: Literal["json", "zip", "cpa", "sub"] = "json"
 
 
 class AccountUpdateRequest(BaseModel):
@@ -157,6 +162,65 @@ def _account_zip_bytes(items: list[dict[str, str]]) -> bytes:
     return buf.getvalue()
 
 
+def _cpa_payload_bytes(items: list[dict[str, str]]) -> tuple[bytes, str, str]:
+    if len(items) == 1:
+        content = (json.dumps(items[0], ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+        return content, "application/json", "json"
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as archive:
+        for index, item in enumerate(items, start=1):
+            raw_name = item.get("email") or item.get("account_id") or f"account-{index:03d}"
+            name = _safe_export_name(raw_name, f"account-{index:03d}")
+            content = (json.dumps(item, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+            info = tarfile.TarInfo(name=f"{name}.json")
+            info.size = len(content)
+            info.mtime = int(datetime.now().timestamp())
+            archive.addfile(info, io.BytesIO(content))
+    return buf.getvalue(), "application/x-tar", "tar"
+
+
+def _sub_payload_bytes(items: list[dict[str, str]]) -> bytes:
+    payload = {
+        "exported_at": datetime.now().isoformat(),
+        "proxies": [],
+        "accounts": [
+            {
+                "name": item.get("email", ""),
+                "platform": "openai",
+                "type": "oauth",
+                "credentials": {
+                    "access_token": item.get("access_token", ""),
+                    "chatgpt_account_id": item.get("account_id", ""),
+                    "chatgpt_user_id": item.get("chatgpt_user_id", ""),
+                    "email": item.get("email", ""),
+                    "expires_at": item.get("expired", ""),
+                    "id_token": item.get("id_token", ""),
+                    "organization_id": item.get("organization_id", ""),
+                    "plan_type": item.get("plan_type", "free"),
+                    "refresh_token": item.get("refresh_token", ""),
+                    "session_token": item.get("session_token", ""),
+                    "client_id": item.get("client_id", "app_EMoamEEZ73f0CkXaXp7hrann"),
+                },
+                "extra": {
+                    "email": item.get("email", ""),
+                    "auth_provider": item.get("auth_provider", ""),
+                    "source": item.get("source_type", "chatgpt_web_session"),
+                    "privacy_mode": item.get("privacy_mode", "training_off"),
+                    "openai_oauth_responses_websockets_v2_enabled": bool(item.get("openai_oauth_responses_websockets_v2_enabled")),
+                    "openai_oauth_responses_websockets_v2_mode": item.get("openai_oauth_responses_websockets_v2_mode", "off"),
+                },
+                "concurrency": 10,
+                "priority": 1,
+                "rate_multiplier": 1,
+                "auto_pause_on_expired": True,
+            }
+            for item in items
+        ],
+    }
+    return (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
 def create_router() -> APIRouter:
     router = APIRouter()
 
@@ -237,6 +301,14 @@ def create_router() -> APIRouter:
             "errors": refresh_result.get("errors", []),
             "items": refresh_result.get("items", result.get("items", [])),
         }
+
+    @router.post("/api/accounts/refresh-tokens")
+    async def import_refresh_tokens(body: RefreshTokenImportRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        refresh_tokens = [str(token or "").strip() for token in body.refresh_tokens if str(token or "").strip()]
+        if not refresh_tokens:
+            raise HTTPException(status_code=400, detail={"error": "refresh_tokens is required"})
+        return account_service.add_refresh_tokens(refresh_tokens)
 
     @router.delete("/api/accounts")
     async def delete_accounts(body: AccountDeleteRequest, authorization: str | None = Header(default=None)):
@@ -321,6 +393,22 @@ def create_router() -> APIRouter:
                 content,
                 media_type="application/zip",
                 headers={"Content-Disposition": f'attachment; filename="codex-accounts-{timestamp}.zip"'},
+            )
+
+        if body.format == "cpa":
+            content, media_type, ext = _cpa_payload_bytes(items)
+            return Response(
+                content,
+                media_type=media_type,
+                headers={"Content-Disposition": f'attachment; filename="codex-accounts-{timestamp}.{ext}"'},
+            )
+
+        if body.format == "sub":
+            content = _sub_payload_bytes(items)
+            return Response(
+                content,
+                media_type="application/json",
+                headers={"Content-Disposition": f'attachment; filename="sub2api-accounts-{timestamp}.json"'},
             )
 
         payload: dict[str, str] | list[dict[str, str]] = items[0] if len(items) == 1 else items

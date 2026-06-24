@@ -1107,6 +1107,50 @@ class AccountService:
             for token in tokens
         ])
 
+    def add_refresh_tokens(self, refresh_tokens: list[str], source_type: str = "oauth_refresh") -> dict:
+        refresh_tokens = list(dict.fromkeys(token for token in refresh_tokens if token))
+        if not refresh_tokens:
+            return {"added": 0, "skipped": 0, "items": self.list_accounts(), "refreshed": 0, "errors": []}
+
+        added = 0
+        skipped = 0
+        refreshed = 0
+        errors: list[dict[str, str]] = []
+        items_snapshot: list[dict[str, Any]] = []
+
+        for refresh_token in refresh_tokens:
+            try:
+                token_data = self._request_access_token_refresh(refresh_token)
+            except Exception as exc:
+                errors.append({"refresh_token": anonymize_token(refresh_token), "error": str(exc)})
+                continue
+
+            access_token = str(token_data.get("access_token") or "").strip()
+            if not access_token:
+                errors.append({"refresh_token": anonymize_token(refresh_token), "error": "missing access_token"})
+                continue
+
+            payload = {
+                "access_token": access_token,
+                "refresh_token": str(token_data.get("refresh_token") or refresh_token).strip(),
+                "id_token": str(token_data.get("id_token") or "").strip(),
+                "source_type": self._normalize_source_type(source_type),
+            }
+
+            result = self._add_account_payloads([payload])
+            added += int(result.get("added") or 0)
+            skipped += int(result.get("skipped") or 0)
+            items_snapshot = list(result.get("items") or items_snapshot)
+            refreshed += 1
+
+        return {
+            "added": added,
+            "skipped": skipped,
+            "refreshed": refreshed,
+            "errors": errors,
+            "items": items_snapshot or self.list_accounts(),
+        }
+
     def _add_account_payloads(self, payloads: list[dict]) -> dict:
         deduped: dict[str, dict] = {}
         for payload in payloads:
