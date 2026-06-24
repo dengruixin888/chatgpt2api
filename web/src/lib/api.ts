@@ -84,7 +84,7 @@ type RefreshTokenImportResponse = {
   errors?: Array<{ refresh_token: string; error: string }>;
 };
 
-export type AccountExportFormat = "json" | "zip" | "cpa" | "sub";
+export type AccountExportFormat = "json" | "zip" | "cpa" | "sub" | "refresh";
 
 export type AccountRefreshResponse = {
   items: Account[];

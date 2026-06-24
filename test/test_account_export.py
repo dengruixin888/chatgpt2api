@@ -3,6 +3,7 @@ import json
 import unittest
 from typing import Any
 
+from api.accounts import _refresh_tokens_md_bytes
 from services.account_service import AccountService
 
 
@@ -112,6 +113,41 @@ class AccountExportTests(unittest.TestCase):
         self.assertEqual(account["export_type"], "codex")
         self.assertEqual(account["refresh_token"], "rt_test")
         self.assertEqual(account["account_id"], "acct_123")
+
+    def test_build_export_items_refresh_tokens_are_preserved_for_md_export(self) -> None:
+        access_token = make_jwt({"exp": 0})
+        id_token = make_jwt({"email": "refresh@example.com"})
+        service = AccountService(
+            MemoryStorage(
+                [
+                    {
+                        "access_token": access_token,
+                        "refresh_token": "rt_one",
+                        "id_token": id_token,
+                    },
+                    {
+                        "access_token": make_jwt({"exp": 1}),
+                        "refresh_token": "rt_two",
+                        "id_token": make_jwt({"email": "refresh2@example.com"}),
+                    },
+                ]
+            )
+        )
+
+        items = service.build_export_items()
+
+        self.assertEqual([item["refresh_token"] for item in items], ["rt_one", "rt_two"])
+
+    def test_refresh_tokens_md_bytes_one_token_per_line(self) -> None:
+        content = _refresh_tokens_md_bytes(
+            [
+                {"refresh_token": "rt_one"},
+                {"refresh_token": ""},
+                {"refresh_token": "rt_two"},
+            ]
+        )
+
+        self.assertEqual(content.decode("utf-8"), "rt_one\nrt_two\n")
 
 
 if __name__ == "__main__":

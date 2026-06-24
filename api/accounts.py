@@ -65,7 +65,7 @@ class AccountRefreshRequest(BaseModel):
 
 class AccountExportRequest(BaseModel):
     access_tokens: list[str] = Field(default_factory=list)
-    format: Literal["json", "zip", "cpa", "sub"] = "json"
+    format: Literal["json", "zip", "cpa", "sub", "refresh"] = "json"
 
 
 class AccountUpdateRequest(BaseModel):
@@ -219,6 +219,15 @@ def _sub_payload_bytes(items: list[dict[str, str]]) -> bytes:
         ],
     }
     return (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
+def _refresh_tokens_md_bytes(items: list[dict[str, str]]) -> bytes:
+    refresh_tokens = [
+        str(item.get("refresh_token") or "").strip()
+        for item in items
+        if str(item.get("refresh_token") or "").strip()
+    ]
+    return ("\n".join(refresh_tokens) + ("\n" if refresh_tokens else "")).encode("utf-8")
 
 
 def create_router() -> APIRouter:
@@ -409,6 +418,14 @@ def create_router() -> APIRouter:
                 content,
                 media_type="application/json",
                 headers={"Content-Disposition": f'attachment; filename="sub2api-accounts-{timestamp}.json"'},
+            )
+
+        if body.format == "refresh":
+            content = _refresh_tokens_md_bytes(items)
+            return Response(
+                content,
+                media_type="text/markdown; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="refresh-tokens-{timestamp}.md"'},
             )
 
         payload: dict[str, str] | list[dict[str, str]] = items[0] if len(items) == 1 else items

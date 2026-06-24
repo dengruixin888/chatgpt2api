@@ -177,6 +177,8 @@ async function downloadAccounts(accounts: Account[], format: AccountExportFormat
         ? `accounts-${Date.now()}.tar`
         : format === "zip"
           ? `accounts-${Date.now()}.zip`
+          : format === "refresh"
+            ? `refresh-tokens-${Date.now()}.md`
           : `accounts-${Date.now()}.json`;
   link.click();
   URL.revokeObjectURL(url);
@@ -830,6 +832,17 @@ function AccountsPageContent() {
               >
                 <FileJson className="size-4" />
                 导出 sub2api
+              </button>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-stone-700 transition hover:bg-stone-100"
+                onClick={() => {
+                  setExportOpen(false);
+                  void downloadAccounts(accounts, "refresh");
+                }}
+              >
+                <FileJson className="size-4" />
+                导出 Refresh Token
               </button>
             </PopoverContent>
           </Popover>
