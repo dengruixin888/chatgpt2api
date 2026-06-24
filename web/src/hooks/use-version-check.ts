@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -6,10 +6,8 @@ import { toast } from "sonner";
 import webConfig from "@/constants/common-env";
 import { parseChangelog, type ReleaseInfo } from "@/lib/release";
 
-const latestVersionUrl =
-  "https://raw.githubusercontent.com/dengruixin888/chatgpt2api/main/VERSION";
-const latestChangelogUrl =
-  "https://raw.githubusercontent.com/dengruixin888/chatgpt2api/main/CHANGELOG.md";
+const latestVersionUrl = "https://raw.githubusercontent.com/dengruixin888/chatgpt2api/main/VERSION";
+const latestChangelogUrl = "https://raw.githubusercontent.com/dengruixin888/chatgpt2api/main/CHANGELOG.md";
 const notifiedVersionKey = "chatgpt2api_version_notified";
 
 function readLocalReleases(): ReleaseInfo[] {
@@ -39,6 +37,7 @@ export function useVersionCheck() {
   const [releases, setReleases] = useState<ReleaseInfo[]>(localReleases);
   const [checking, setChecking] = useState(false);
   const [open, setOpen] = useState(false);
+
   const hasNewVersion = isNewerVersion(latestVersion, currentVersion);
   const latestRelease = releases.find((release) => release.version === latestVersion) ?? releases[0] ?? null;
 
@@ -50,18 +49,24 @@ export function useVersionCheck() {
           fetch(latestVersionUrl),
           fetch(latestChangelogUrl),
         ]);
-        if (!versionResponse.ok || !changelogResponse.ok) throw new Error();
-        const [version, changelog] = await Promise.all([
-          versionResponse.text(),
-          changelogResponse.text(),
-        ]);
-        setLatestVersion(version.trim() || currentVersion);
-        if (changelog.trim()) setReleases(parseChangelog(changelog));
-        if (showMessage) toast.success("已获取最新版本信息");
+        if (!versionResponse.ok || !changelogResponse.ok) {
+          throw new Error("failed to fetch version info");
+        }
+        const [version, changelog] = await Promise.all([versionResponse.text(), changelogResponse.text()]);
+        const nextVersion = version.trim() || currentVersion;
+        setLatestVersion(nextVersion);
+        if (changelog.trim()) {
+          setReleases(parseChangelog(changelog));
+        }
+        if (showMessage) {
+          toast.success("已获取最新版本信息");
+        }
       } catch {
         setLatestVersion(currentVersion);
         setReleases(localReleases);
-        if (showMessage) toast.error("获取最新版本信息失败");
+        if (showMessage) {
+          toast.error("获取最新版本信息失败");
+        }
       } finally {
         setChecking(false);
       }
@@ -74,10 +79,7 @@ export function useVersionCheck() {
   }, [checkLatestRelease]);
 
   useEffect(() => {
-    if (!hasNewVersion || latestVersion === currentVersion) {
-      return;
-    }
-    if (typeof window === "undefined") {
+    if (!hasNewVersion || latestVersion === currentVersion || typeof window === "undefined") {
       return;
     }
     const notifiedVersion = window.localStorage.getItem(notifiedVersionKey);
@@ -85,8 +87,7 @@ export function useVersionCheck() {
       return;
     }
     window.localStorage.setItem(notifiedVersionKey, latestVersion);
-    toast.info(`检测到新版本 v${latestVersion}，已打开更新说明`);
-    setOpen(true);
+    toast.info(`检测到新版本 v${latestVersion}，点击“更新”查看`);
   }, [currentVersion, hasNewVersion, latestVersion]);
 
   const openReleaseModal = () => {

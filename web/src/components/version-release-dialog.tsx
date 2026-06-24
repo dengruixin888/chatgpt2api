@@ -1,15 +1,10 @@
-"use client";
+﻿"use client";
 
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import webConfig from "@/constants/common-env";
 import { useVersionCheck } from "@/hooks/use-version-check";
 import { cn } from "@/lib/utils";
@@ -40,17 +35,18 @@ export function VersionReleaseDialog({ className }: { className?: string }) {
       <button
         type="button"
         className={cn(
-          "relative px-1 py-1 text-[11px] font-medium text-stone-500 transition hover:text-stone-900 dark:text-stone-300 dark:hover:text-white",
+          hasNewVersion
+            ? "inline-flex h-8 items-center justify-center rounded-full border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 hover:text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/70"
+            : "relative px-1 py-1 text-[11px] font-medium text-stone-500 transition hover:text-stone-900 dark:text-stone-300 dark:hover:text-white",
           className,
         )}
         onClick={openReleaseModal}
-        title="查看版本更新"
+        title={hasNewVersion ? "检测到新版本，点击查看更新说明" : "查看版本更新"}
       >
-        v{webConfig.appVersion}
-        {hasNewVersion ? (
-          <span className="absolute -top-1 -right-1 size-2 rounded-full bg-emerald-500" />
-        ) : null}
+        {hasNewVersion ? "更新" : `v${webConfig.appVersion}`}
+        {hasNewVersion ? null : <span className="absolute -top-1 -right-1 size-2 rounded-full bg-emerald-500" />}
       </button>
+
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="w-[min(94vw,680px)] rounded-2xl">
           <DialogHeader>
@@ -62,7 +58,6 @@ export function VersionReleaseDialog({ className }: { className?: string }) {
               <span className="mx-1 font-mono">git pull</span>
               <span className="mx-1">-&gt;</span>
               <span className="mx-1 font-mono">docker compose up -d --build</span>
-              。
             </div>
           ) : null}
           <div className="grid grid-cols-2 gap-3">
@@ -85,11 +80,9 @@ export function VersionReleaseDialog({ className }: { className?: string }) {
             {latestRelease?.version && hasNewVersion ? (
               <div className="rounded-xl border border-stone-200 bg-stone-50 p-3 text-sm leading-6 text-stone-700 dark:border-white/10 dark:bg-white/5 dark:text-stone-200">
                 <div className="mb-1 font-medium text-stone-950 dark:text-stone-100">服务器更新命令</div>
-                <pre className="overflow-x-auto rounded-lg bg-white p-3 text-xs text-stone-600 dark:bg-stone-950 dark:text-stone-300">
-{`cd /path/to/chatgpt2api
+                <pre className="overflow-x-auto rounded-lg bg-white p-3 text-xs text-stone-600 dark:bg-stone-950 dark:text-stone-300">{`cd /path/to/chatgpt2api
 git pull
-docker compose up -d --build`}
-                </pre>
+docker compose up -d --build`}</pre>
               </div>
             ) : null}
             {releases.map((release) => (
