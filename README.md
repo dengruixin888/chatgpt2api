@@ -3,6 +3,120 @@
 
 <p align="center">ChatGPT2API 主要是对 ChatGPT 官网相关能力进行逆向整理与封装，提供面向 ChatGPT 图片生成、图片编辑、多图组图编辑场景的 OpenAI 兼容图片 API / 代理，并集成在线画图、号池管理、多种账号导入方式与 Docker 自托管部署能力。</p>
 
+## 本仓库部署说明
+
+本分支面向自部署使用，默认通过 Docker Compose 在服务器 `8000` 端口提供 Web 面板和 API。
+
+已包含的账号管理增强：
+
+- 账号页顶部“导出”合并为一个下拉菜单：
+  - 导出 Token
+  - 导出 CPA
+  - 导出 sub2api
+- “导入”弹窗新增：
+  - 导入 Refresh Token
+- 后端 `/api/accounts/export` 支持：
+  - `json`
+  - `zip`
+  - `cpa`
+  - `sub`
+
+### 服务器首次部署
+
+服务器需要先安装 Docker 和 Docker Compose 插件。
+
+```bash
+git clone https://github.com/dengruixin888/chatgpt2api.git
+cd chatgpt2api
+```
+
+启动前先设置登录密钥，二选一即可。
+
+方式一：修改 `config.json`：
+
+```json
+{
+  "auth-key": "换成你自己的后台登录密钥"
+}
+```
+
+方式二：在 `docker-compose.yml` 的 `environment` 增加环境变量，覆盖 `config.json`：
+
+```yaml
+environment:
+  - STORAGE_BACKEND=json
+  - CHATGPT2API_AUTH_KEY=换成你自己的后台登录密钥
+```
+
+构建并启动：
+
+```bash
+docker compose up -d --build
+```
+
+访问地址：
+
+- Web 面板：`http://服务器IP:8000/accounts`
+- API 地址：`http://服务器IP:8000/v1`
+- 本地数据目录：`./data`
+
+如果服务器防火墙或云厂商安全组没有放行端口，需要放行 TCP `8000`。
+
+### 常用维护命令
+
+查看容器：
+
+```bash
+docker compose ps
+```
+
+查看日志：
+
+```bash
+docker compose logs -f --tail=200
+```
+
+重启：
+
+```bash
+docker compose restart
+```
+
+停止：
+
+```bash
+docker compose down
+```
+
+从 GitHub 更新代码并重新部署：
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+### 端口调整
+
+默认端口映射是：
+
+```yaml
+ports:
+  - "8000:80"
+```
+
+如果服务器 `8000` 已被占用，可以改成其它宿主机端口，例如：
+
+```yaml
+ports:
+  - "3000:80"
+```
+
+然后重新启动：
+
+```bash
+docker compose up -d --build
+```
+
 > [!WARNING]
 > 免责声明：
 >
