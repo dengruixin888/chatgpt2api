@@ -29,6 +29,7 @@ export function VersionReleaseDialog({ className }: { className?: string }) {
     openReleaseModal,
     latestVersion,
     releases,
+    latestRelease,
     checking,
     hasNewVersion,
     checkLatestRelease,
@@ -55,6 +56,15 @@ export function VersionReleaseDialog({ className }: { className?: string }) {
           <DialogHeader>
             <DialogTitle>版本更新</DialogTitle>
           </DialogHeader>
+          {hasNewVersion ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-100">
+              检测到新版本 v{latestVersion}。如果你部署在服务器上，更新步骤通常是：
+              <span className="mx-1 font-mono">git pull</span>
+              <span className="mx-1">-&gt;</span>
+              <span className="mx-1 font-mono">docker compose up -d --build</span>
+              。
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-3">
             <VersionCard label="当前版本" value={webConfig.appVersion} />
             <VersionCard
@@ -72,6 +82,16 @@ export function VersionReleaseDialog({ className }: { className?: string }) {
             />
           </div>
           <div className="max-h-[56vh] space-y-5 overflow-y-auto pr-1">
+            {latestRelease?.version && hasNewVersion ? (
+              <div className="rounded-xl border border-stone-200 bg-stone-50 p-3 text-sm leading-6 text-stone-700 dark:border-white/10 dark:bg-white/5 dark:text-stone-200">
+                <div className="mb-1 font-medium text-stone-950 dark:text-stone-100">服务器更新命令</div>
+                <pre className="overflow-x-auto rounded-lg bg-white p-3 text-xs text-stone-600 dark:bg-stone-950 dark:text-stone-300">
+{`cd /path/to/chatgpt2api
+git pull
+docker compose up -d --build`}
+                </pre>
+              </div>
+            ) : null}
             {releases.map((release) => (
               <div key={release.version} className="border-l border-stone-200 pl-4 dark:border-white/10">
                 <div className="flex flex-wrap items-center gap-2">
@@ -96,7 +116,7 @@ export function VersionReleaseDialog({ className }: { className?: string }) {
             ))}
           </div>
           <Button variant="outline" size="sm" asChild>
-            <a href="https://github.com/basketikun/chatgpt2api" target="_blank" rel="noreferrer">
+            <a href="https://github.com/dengruixin888/chatgpt2api" target="_blank" rel="noreferrer">
               前往 GitHub 更新
             </a>
           </Button>

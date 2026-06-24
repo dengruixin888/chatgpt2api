@@ -1,15 +1,16 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import webConfig from "@/constants/common-env";
 import { parseChangelog, type ReleaseInfo } from "@/lib/release";
 
 const latestVersionUrl =
-  "https://raw.githubusercontent.com/basketikun/chatgpt2api/main/VERSION";
+  "https://raw.githubusercontent.com/dengruixin888/chatgpt2api/main/VERSION";
 const latestChangelogUrl =
-  "https://raw.githubusercontent.com/basketikun/chatgpt2api/main/CHANGELOG.md";
+  "https://raw.githubusercontent.com/dengruixin888/chatgpt2api/main/CHANGELOG.md";
+const notifiedVersionKey = "chatgpt2api_version_notified";
 
 function readLocalReleases(): ReleaseInfo[] {
   return JSON.parse(process.env.NEXT_PUBLIC_APP_RELEASES || "[]");
@@ -39,6 +40,7 @@ export function useVersionCheck() {
   const [checking, setChecking] = useState(false);
   const [open, setOpen] = useState(false);
   const hasNewVersion = isNewerVersion(latestVersion, currentVersion);
+  const latestRelease = releases.find((release) => release.version === latestVersion) ?? releases[0] ?? null;
 
   const checkLatestRelease = useCallback(
     async (showMessage = false) => {
@@ -67,6 +69,26 @@ export function useVersionCheck() {
     [currentVersion, localReleases],
   );
 
+  useEffect(() => {
+    void checkLatestRelease();
+  }, [checkLatestRelease]);
+
+  useEffect(() => {
+    if (!hasNewVersion || latestVersion === currentVersion) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    const notifiedVersion = window.localStorage.getItem(notifiedVersionKey);
+    if (notifiedVersion === latestVersion) {
+      return;
+    }
+    window.localStorage.setItem(notifiedVersionKey, latestVersion);
+    toast.info(`检测到新版本 v${latestVersion}，已打开更新说明`);
+    setOpen(true);
+  }, [currentVersion, hasNewVersion, latestVersion]);
+
   const openReleaseModal = () => {
     setOpen(true);
     void checkLatestRelease();
@@ -78,6 +100,7 @@ export function useVersionCheck() {
     openReleaseModal,
     latestVersion,
     releases,
+    latestRelease,
     checking,
     hasNewVersion,
     checkLatestRelease,
