@@ -35,6 +35,7 @@ export default function LoginPage() {
         subjectId: data.subject_id,
         name: data.name,
       });
+      toast.success("已保存为持久化 auth key");
       router.replace(getDefaultRouteForRole(data.role));
     } catch (error) {
       const message = error instanceof Error ? error.message : "登录失败";

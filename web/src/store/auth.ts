@@ -11,6 +11,8 @@ export type StoredAuthSession = {
   name: string;
 };
 
+type StoredAuthSessionRecord = Omit<StoredAuthSession, "key">;
+
 export const AUTH_KEY_STORAGE_KEY = "chatgpt2api_auth_key";
 export const AUTH_SESSION_STORAGE_KEY = "chatgpt2api_auth_session";
 
@@ -39,6 +41,20 @@ function normalizeSession(value: unknown, fallbackKey = ""): StoredAuthSession |
   };
 }
 
+function toSessionRecord(session: StoredAuthSession): StoredAuthSessionRecord | null {
+  const key = String(session.key || "").trim();
+  const role = session.role === "admin" || session.role === "user" ? session.role : null;
+  if (!key || !role) {
+    return null;
+  }
+
+  return {
+    role,
+    subjectId: String(session.subjectId || "").trim(),
+    name: String(session.name || "").trim(),
+  };
+}
+
 export function getDefaultRouteForRole(role: AuthRole) {
   return role === "admin" ? "/accounts" : "/image";
 }
@@ -58,7 +74,7 @@ export async function getStoredAuthSession() {
 
   const [storedKey, storedSession] = await Promise.all([
     authStorage.getItem<string>(AUTH_KEY_STORAGE_KEY),
-    authStorage.getItem<StoredAuthSession>(AUTH_SESSION_STORAGE_KEY),
+    authStorage.getItem<StoredAuthSessionRecord>(AUTH_SESSION_STORAGE_KEY),
   ]);
 
   const normalizedSession = normalizeSession(storedSession, String(storedKey || ""));
@@ -84,7 +100,7 @@ export async function setStoredAuthSession(session: StoredAuthSession) {
 
   await Promise.all([
     authStorage.setItem(AUTH_KEY_STORAGE_KEY, normalizedSession.key),
-    authStorage.setItem(AUTH_SESSION_STORAGE_KEY, normalizedSession),
+    authStorage.setItem(AUTH_SESSION_STORAGE_KEY, toSessionRecord(normalizedSession)),
   ]);
 }
 

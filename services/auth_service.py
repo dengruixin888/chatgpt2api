@@ -92,6 +92,16 @@ class AuthService:
             items = [item for item in self._items if role is None or item.get("role") == role]
             return [self._public_item(item) for item in items]
 
+    def has_enabled_key(self, role: AuthRole | None = None) -> bool:
+        with self._lock:
+            self._reload_locked()
+            for item in self._items:
+                if role is not None and item.get("role") != role:
+                    continue
+                if bool(item.get("enabled", True)):
+                    return True
+            return False
+
     def _has_key_hash_locked(self, key_hash: str, *, exclude_id: str = "") -> bool:
         for item in self._items:
             item_id = self._clean(item.get("id"))

@@ -261,6 +261,7 @@ export type LoginResponse = {
   role: AuthRole;
   subject_id: string;
   name: string;
+  persistent?: boolean;
 };
 
 export type UserKey = {
