@@ -21,6 +21,7 @@
   - `cpa`
   - `sub`
 - 首次登录后，输入的密钥会自动保存为持久化 auth key，重启后仍可直接使用
+- 如果 `config.json` 里的 `auth-key` 还是默认占位值 `chatgpt2api`，首次登录会自动把你输入的密钥写回 `config.json`，以后都用这把长效密钥
 
 ### 服务器首次部署
 

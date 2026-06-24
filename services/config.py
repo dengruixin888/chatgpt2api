@@ -186,6 +186,10 @@ def _is_invalid_auth_key(value: object) -> bool:
     return _normalize_auth_key(value) == ""
 
 
+def _is_placeholder_auth_key(value: object) -> bool:
+    return _normalize_auth_key(value) == "chatgpt2api"
+
+
 def _read_json_object(path: Path, *, name: str) -> dict[str, object]:
     if not path.exists():
         return {}
@@ -206,11 +210,6 @@ def _load_settings() -> LoadedSettings:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     raw_config = _read_json_object(CONFIG_FILE, name="config.json")
     auth_key = _normalize_auth_key(os.getenv("CHATGPT2API_AUTH_KEY") or raw_config.get("auth-key"))
-    if _is_invalid_auth_key(auth_key):
-        raise ValueError(
-            "❌ auth-key 未设置！\n"
-            "请在环境变量 CHATGPT2API_AUTH_KEY 中设置，或者在 config.json 中填写 auth-key。"
-        )
 
     try:
         refresh_interval = int(raw_config.get("refresh_account_interval_minute", 5))
@@ -229,15 +228,6 @@ class ConfigStore:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.data = self._load()
         self._storage_backend: StorageBackend | None = None
-        if _is_invalid_auth_key(self.auth_key):
-            raise ValueError(
-                "❌ auth-key 未设置！\n"
-                "请按以下任意一种方式解决：\n"
-                "1. 在 Render 的 Environment 变量中添加：\n"
-                "   CHATGPT2API_AUTH_KEY = your_real_auth_key\n"
-                "2. 或者在 config.json 中填写：\n"
-                '   "auth-key": "your_real_auth_key"'
-            )
 
     def _load(self) -> dict[str, object]:
         return _read_json_object(self.path, name="config.json")
@@ -248,6 +238,17 @@ class ConfigStore:
     @property
     def auth_key(self) -> str:
         return _normalize_auth_key(os.getenv("CHATGPT2API_AUTH_KEY") or self.data.get("auth-key"))
+
+    def has_auth_key(self) -> bool:
+        return not (_is_invalid_auth_key(self.auth_key) or _is_placeholder_auth_key(self.auth_key))
+
+    def set_auth_key(self, value: str) -> str:
+        auth_key = _normalize_auth_key(value)
+        if _is_invalid_auth_key(auth_key):
+            raise ValueError("auth-key is required")
+        self.data["auth-key"] = auth_key
+        self._save()
+        return auth_key
 
     @property
     def accounts_file(self) -> Path:
@@ -455,6 +456,18 @@ class ConfigStore:
         self.data = next_data
         self._save()
         return self.get()
+
+    def bootstrap_auth_key(self, auth_key: str) -> str:
+        normalized = _normalize_auth_key(auth_key)
+        if _is_invalid_auth_key(normalized):
+            raise ValueError("auth-key is required")
+        if self.has_auth_key():
+            if self.auth_key != normalized:
+                raise ValueError("auth-key already exists")
+            return normalized
+        self.data["auth-key"] = normalized
+        self._save()
+        return normalized
 
     def get_backup_settings(self) -> dict[str, object]:
         return _normalize_backup_settings(self.data.get("backup"))

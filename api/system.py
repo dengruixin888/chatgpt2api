@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from urllib.parse import quote
 
@@ -7,7 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
-from api.support import require_admin, require_identity, resolve_image_base_url
+from api.support import extract_bearer_token, require_admin, require_identity, resolve_image_base_url
 from services.auth_service import auth_service
 from services.backup_service import BackupError, backup_service
 from services.config import config
@@ -60,16 +60,31 @@ def create_router(app_version: str) -> APIRouter:
 
     @router.post("/auth/login")
     async def login(authorization: str | None = Header(default=None)):
-        identity = require_identity(authorization)
+        token = extract_bearer_token(authorization)
+        if not token:
+            raise HTTPException(status_code=401, detail={"error": "密钥无效或已失效，请重新登录"})
+
+        if config.has_auth_key():
+            identity = require_identity(authorization)
+        else:
+            identity = auth_service.authenticate(token)
+            if identity is None:
+                if auth_service.list_keys():
+                    raise HTTPException(status_code=401, detail={"error": "密钥无效或已失效，请重新登录"})
+                try:
+                    config.bootstrap_auth_key(token)
+                except ValueError as exc:
+                    raise HTTPException(status_code=401, detail={"error": "密钥无效或已失效，请重新登录"}) from exc
+                identity = {"id": "admin", "name": "管理员", "role": "admin"}
         return {
             "ok": True,
             "version": app_version,
             "role": identity.get("role"),
             "subject_id": identity.get("id"),
             "name": identity.get("name"),
-            "persistent": auth_service.has_enabled_key(identity.get("role")),
+            "persistent": True,
+            "bootstrapped": not auth_service.list_keys() and config.auth_key == token,
         }
-
     @router.get("/version")
     async def get_version():
         return {"version": app_version}
@@ -284,7 +299,7 @@ def create_router(app_version: str) -> APIRouter:
         return HTMLResponse(f"""<!DOCTYPE html>
 <html lang="zh">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>号池健康监控 - chatgpt2api</title>
+<title>鍙锋睜鍋ュ悍鐩戞帶 - chatgpt2api</title>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{font-family:system-ui,-apple-system,sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh}}
@@ -309,28 +324,29 @@ td{{padding:8px 12px;border-top:1px solid #2a2d3a;font-size:14px}}tr:hover td{{b
 </head>
 <body>
 <div class="header">
-<h1><span class="status-dot {'status-ok' if healthy else 'status-degraded'}"></span>号池健康监控</h1>
-<div style="font-size:13px;color:#94a3b8">v{app_version} · 30s 自动刷新</div>
+<h1><span class="status-dot {'status-ok' if healthy else 'status-degraded'}"></span>鍙锋睜鍋ュ悍鐩戞帶</h1>
+<div style="font-size:13px;color:#94a3b8">v{app_version} 路 30s 鑷姩鍒锋柊</div>
 </div>
 <div class="container">
 <div class="cards">
-<div class="card"><div class="label">号池状态</div><div class="value {'green' if healthy else 'yellow'}">{'正常' if healthy else '异常'}</div></div>
-<div class="card"><div class="label">当前账号</div><div class="value blue">{stats['total']}</div></div>
-<div class="card"><div class="label">累计入库</div><div class="value">{stats['cumulative_total']}</div></div>
-<div class="card"><div class="label">可用账号</div><div class="value green">{stats['active']}</div></div>
-<div class="card"><div class="label">无限额</div><div class="value">{stats['unlimited_quota_count']}</div></div>
-<div class="card"><div class="label">剩余额度</div><div class="value">{stats['total_quota']}</div></div>
-<div class="card"><div class="label">限流</div><div class="value yellow">{stats['limited']}</div></div>
-<div class="card"><div class="label">异常</div><div class="value red">{stats['abnormal']}</div></div>
-<div class="card"><div class="label">禁用</div><div class="value">{stats['disabled']}</div></div>
-<div class="card"><div class="label">成功/失败</div><div class="value">{stats['total_success']}<span style="font-size:18px;color:#94a3b8">/</span><span class="red">{stats['total_fail']}</span></div></div>
+<div class="card"><div class="label">鍙锋睜鐘舵€?/div><div class="value {'green' if healthy else 'yellow'}">{'姝ｅ父' if healthy else '寮傚父'}</div></div>
+<div class="card"><div class="label">褰撳墠璐﹀彿</div><div class="value blue">{stats['total']}</div></div>
+<div class="card"><div class="label">绱鍏ュ簱</div><div class="value">{stats['cumulative_total']}</div></div>
+<div class="card"><div class="label">鍙敤璐﹀彿</div><div class="value green">{stats['active']}</div></div>
+<div class="card"><div class="label">鏃犻檺棰?/div><div class="value">{stats['unlimited_quota_count']}</div></div>
+<div class="card"><div class="label">鍓╀綑棰濆害</div><div class="value">{stats['total_quota']}</div></div>
+<div class="card"><div class="label">闄愭祦</div><div class="value yellow">{stats['limited']}</div></div>
+<div class="card"><div class="label">寮傚父</div><div class="value red">{stats['abnormal']}</div></div>
+<div class="card"><div class="label">绂佺敤</div><div class="value">{stats['disabled']}</div></div>
+<div class="card"><div class="label">鎴愬姛/澶辫触</div><div class="value">{stats['total_success']}<span style="font-size:18px;color:#94a3b8">/</span><span class="red">{stats['total_fail']}</span></div></div>
 </div>
-<h2 style="margin-bottom:12px;font-size:16px">账号类型分布</h2>
+<h2 style="margin-bottom:12px;font-size:16px">璐﹀彿绫诲瀷鍒嗗竷</h2>
 <table>
-<tr><th>类型</th><th>数量</th></tr>
+<tr><th>绫诲瀷</th><th>鏁伴噺</th></tr>
 {''.join(f'<tr><td>{t}</td><td>{c}</td></tr>' for t,c in sorted(stats['by_type'].items()))}
 </table>
 <div class="refresh">JSON: <span class="api-url">/health?format=json</span></div>
 </div></body></html>""")
 
     return router
+
