@@ -16,6 +16,7 @@ export function RegisterCard() {
   const isLoading = useSettingsStore((state) => state.isLoadingRegister);
   const isSaving = useSettingsStore((state) => state.isSavingRegister);
   const setProxy = useSettingsStore((state) => state.setRegisterProxy);
+  const setDynamicProxyField = useSettingsStore((state) => state.setRegisterDynamicProxyField);
   const setTotal = useSettingsStore((state) => state.setRegisterTotal);
   const setThreads = useSettingsStore((state) => state.setRegisterThreads);
   const setMode = useSettingsStore((state) => state.setRegisterMode);
@@ -43,6 +44,15 @@ export function RegisterCard() {
   const stats = config.stats || { success: 0, fail: 0, done: 0, running: 0, threads: config.threads };
   const providers = config.mail.providers || [];
   const logs = config.logs || [];
+  const dynamicProxy = config.dynamic_proxy || {
+    enabled: false,
+    protocol: "http" as const,
+    host: "",
+    port: "",
+    username_template: "",
+    password_template: "",
+    session_length: 8,
+  };
   const updateProviderType = (index: number, type: string) => {
     updateProvider(index, {
       type,
@@ -103,6 +113,10 @@ export function RegisterCard() {
               <label className="text-sm text-stone-700">注册代理</label>
               <Input value={config.proxy} onChange={(event) => setProxy(event.target.value)} placeholder="http://127.0.0.1:7890" className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
             </div>
+            <label className="flex items-center gap-3 pt-8 text-sm text-stone-700">
+              <Checkbox checked={Boolean(dynamicProxy.enabled)} onCheckedChange={(checked) => setDynamicProxyField("enabled", Boolean(checked))} disabled={config.enabled} />
+              启用动态代理
+            </label>
             <div className="space-y-2">
               <label className="text-sm text-stone-700">目标剩余额度</label>
               <Input value={String(config.target_quota || "")} onChange={(event) => setTargetQuota(event.target.value)} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled || config.mode !== "quota"} />
@@ -116,6 +130,58 @@ export function RegisterCard() {
               <Input value={String(config.check_interval || "")} onChange={(event) => setCheckInterval(event.target.value)} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled || config.mode === "total"} />
             </div>
           </div>
+
+          {dynamicProxy.enabled ? (
+            <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3">
+              <div>
+                <h3 className="text-sm font-semibold text-stone-800">动态代理</h3>
+                <p className="mt-1 text-xs text-stone-500">
+                  每个任务自动生成一个代理。模板支持 {"{session}"}、{"{index}"}、{"{timestamp}"}、{"{uuid}"}。
+                </p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <label className="text-sm text-stone-700">协议</label>
+                  <Select value={dynamicProxy.protocol || "http"} onValueChange={(value) => setDynamicProxyField("protocol", value)} disabled={config.enabled}>
+                    <SelectTrigger className="h-10 rounded-xl border-stone-200 bg-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="http">http</SelectItem>
+                      <SelectItem value="https">https</SelectItem>
+                      <SelectItem value="socks5">socks5</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-stone-700">Host</label>
+                  <Input value={dynamicProxy.host || ""} onChange={(event) => setDynamicProxyField("host", event.target.value)} placeholder="gate.kookeey.info" className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-stone-700">Port</label>
+                  <Input value={dynamicProxy.port || ""} onChange={(event) => setDynamicProxyField("port", event.target.value)} placeholder="1000" className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-stone-700">用户名模板</label>
+                  <Input value={dynamicProxy.username_template || ""} onChange={(event) => setDynamicProxyField("username_template", event.target.value)} placeholder="4297494-53e1fb99" className="h-10 rounded-xl border-stone-200 bg-white font-mono text-xs" disabled={config.enabled} />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm text-stone-700">密码模板</label>
+                  <Input value={dynamicProxy.password_template || ""} onChange={(event) => setDynamicProxyField("password_template", event.target.value)} placeholder="31003161-US_Alabama_city_Butler-{session}-5m" className="h-10 rounded-xl border-stone-200 bg-white font-mono text-xs" disabled={config.enabled} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm text-stone-700">Session 长度</label>
+                  <Input value={String(dynamicProxy.session_length || 8)} onChange={(event) => setDynamicProxyField("session_length", Number(event.target.value) || 8)} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm text-stone-700">示例</label>
+                  <div className="rounded-xl border border-stone-200 bg-white px-3 py-2 font-mono text-xs text-stone-600">
+                    {`${dynamicProxy.protocol || "http"}://${dynamicProxy.username_template || "username"}:${dynamicProxy.password_template || "password"}@${dynamicProxy.host || "host"}:${dynamicProxy.port || "port"}`}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="space-y-3 border-t border-stone-200 pt-3">
             <div className="flex items-center justify-between gap-3">

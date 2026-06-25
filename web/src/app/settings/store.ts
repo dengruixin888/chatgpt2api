@@ -231,6 +231,7 @@ type SettingsStore = {
   loadRegister: (silent?: boolean) => Promise<void>;
   setRegisterConfig: (config: RegisterConfig) => void;
   setRegisterProxy: (value: string) => void;
+  setRegisterDynamicProxyField: (key: keyof NonNullable<RegisterConfig["dynamic_proxy"]>, value: string | boolean | number) => void;
   setRegisterTotal: (value: string) => void;
   setRegisterThreads: (value: string) => void;
   setRegisterMode: (value: "total" | "quota" | "available") => void;
@@ -690,6 +691,30 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set((state) => state.registerConfig ? { registerConfig: { ...state.registerConfig, proxy: value } } : {});
   },
 
+  setRegisterDynamicProxyField: (key, value) => {
+    set((state) => {
+      if (!state.registerConfig) return {};
+      const current = state.registerConfig.dynamic_proxy || {
+        enabled: false,
+        protocol: "http" as const,
+        host: "",
+        port: "",
+        username_template: "",
+        password_template: "",
+        session_length: 8,
+      };
+      return {
+        registerConfig: {
+          ...state.registerConfig,
+          dynamic_proxy: {
+            ...current,
+            [key]: value,
+          },
+        },
+      };
+    });
+  },
+
   setRegisterTotal: (value) => {
     set((state) => state.registerConfig ? { registerConfig: { ...state.registerConfig, total: Number(value) || 0 } } : {});
   },
@@ -767,6 +792,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       const data = await updateRegisterConfig({
         mail: registerConfig.mail,
         proxy: registerConfig.proxy.trim(),
+        dynamic_proxy: registerConfig.dynamic_proxy,
         total: Math.max(1, Number(registerConfig.total) || 1),
         threads: Math.max(1, Number(registerConfig.threads) || 1),
         mode: registerConfig.mode,
@@ -792,6 +818,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         await updateRegisterConfig({
           mail: registerConfig.mail,
           proxy: registerConfig.proxy.trim(),
+          dynamic_proxy: registerConfig.dynamic_proxy,
           total: Math.max(1, Number(registerConfig.total) || 1),
           threads: Math.max(1, Number(registerConfig.threads) || 1),
           mode: registerConfig.mode,

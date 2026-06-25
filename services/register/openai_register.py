@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 from curl_cffi import requests
 
@@ -28,13 +28,22 @@ config = {
         "providers": [],
     },
     "proxy": "",
+    "dynamic_proxy": {
+        "enabled": False,
+        "protocol": "http",
+        "host": "",
+        "port": "",
+        "username_template": "",
+        "password_template": "",
+        "session_length": 8,
+    },
     "total": 10,
     "threads": 3,
 }
 register_config_file = base_dir.parents[1] / "data" / "register.json"
 try:
     saved_config = json.loads(register_config_file.read_text(encoding="utf-8"))
-    config.update({key: saved_config[key] for key in ("mail", "proxy", "total", "threads") if key in saved_config})
+    config.update({key: saved_config[key] for key in ("mail", "proxy", "dynamic_proxy", "total", "threads") if key in saved_config})
 except Exception:
     pass
 
@@ -225,6 +234,53 @@ def create_session(proxy: str = "") -> Any:
     if proxy:
         kwargs["proxy"] = proxy
     return requests.Session(**kwargs)
+
+
+def _random_session(length: int) -> str:
+    alphabet = string.ascii_lowercase + string.digits
+    return "".join(random.choice(alphabet) for _ in range(max(4, min(64, length))))
+
+
+def _render_proxy_template(template: object, *, index: int, session: str) -> str:
+    value = str(template or "")
+    replacements = {
+        "session": session,
+        "index": str(index),
+        "timestamp": str(int(time.time())),
+        "uuid": uuid.uuid4().hex,
+    }
+    for key, replacement in replacements.items():
+        value = value.replace(f"{{{key}}}", replacement)
+    return value.strip()
+
+
+def build_task_proxy(index: int) -> str:
+    dynamic = config.get("dynamic_proxy")
+    dynamic = dynamic if isinstance(dynamic, dict) else {}
+    if not dynamic.get("enabled"):
+        return str(config.get("proxy") or "").strip()
+
+    host = str(dynamic.get("host") or "").strip()
+    port = str(dynamic.get("port") or "").strip()
+    if not host or not port:
+        return str(config.get("proxy") or "").strip()
+
+    protocol = str(dynamic.get("protocol") or "http").strip().lower()
+    if protocol not in {"http", "https", "socks5"}:
+        protocol = "http"
+
+    try:
+        session_length = int(dynamic.get("session_length") or 8)
+    except (TypeError, ValueError):
+        session_length = 8
+    session = _random_session(session_length)
+    username = _render_proxy_template(dynamic.get("username_template"), index=index, session=session)
+    password = _render_proxy_template(dynamic.get("password_template"), index=index, session=session)
+
+    auth = ""
+    if username or password:
+        auth = f"{quote(username, safe='')}:{quote(password, safe='')}@"
+    return f"{protocol}://{auth}{host}:{port}"
 
 
 def request_with_local_retry(session: requests.Session, method: str, url: str, retry_attempts: int = 3, **kwargs):
@@ -449,7 +505,8 @@ class PlatformRegistrar:
 
 def worker(index: int) -> dict:
     start = time.time()
-    registrar = PlatformRegistrar(config["proxy"])
+    proxy = build_task_proxy(index)
+    registrar = PlatformRegistrar(proxy)
     try:
         step(index, "任务启动")
         result = registrar.register(index)

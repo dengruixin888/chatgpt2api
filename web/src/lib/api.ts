@@ -282,6 +282,15 @@ export type RegisterConfig = {
     providers: Array<Record<string, unknown>>;
   };
   proxy: string;
+  dynamic_proxy?: {
+    enabled: boolean;
+    protocol: "http" | "https" | "socks5";
+    host: string;
+    port: string;
+    username_template: string;
+    password_template: string;
+    session_length: number;
+  };
   total: number;
   threads: number;
   mode: "total" | "quota" | "available";
