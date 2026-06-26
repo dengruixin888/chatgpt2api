@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import imaplib
 import json
 import random
 import re
@@ -16,6 +17,7 @@ from curl_cffi import requests
 
 
 from services.config import DATA_DIR
+from services.register.recovery_store import count_records_for_base
 
 DDG_ALIASES_FILE = DATA_DIR / "ddg_aliases.json"
 _ddg_aliases_lock = Lock()
@@ -101,6 +103,18 @@ def _normalize_string_list(value: Any) -> list[str]:
         return [str(item).strip() for item in value if str(item).strip()]
     text = str(value or "").strip()
     return [text] if text else []
+
+
+def _normalize_multiline_account_lines(value: Any) -> list[str]:
+    if isinstance(value, list):
+        result: list[str] = []
+        for item in value:
+            text = str(item or "").strip()
+            if text:
+                result.append(text)
+        return result
+    text = str(value or "").replace("\r", "\n")
+    return [item.strip() for item in text.split("\n") if item.strip()]
 
 
 def _create_session(conf: dict):
@@ -257,6 +271,213 @@ class BaseMailProvider:
 
     def close(self) -> None:
         pass
+
+
+class OutlookMailProvider(BaseMailProvider):
+    name = "outlook"
+
+    def __init__(self, entry: dict, conf: dict):
+        super().__init__(conf, str(entry.get("provider_ref") or ""))
+        account_lines = _normalize_multiline_account_lines(entry.get("account_lines"))
+        if not account_lines:
+            single_line = str(entry.get("account_line") or entry.get("raw") or "").strip()
+            if single_line:
+                account_lines = [single_line]
+        selected_line = str(entry.get("_selected_account_line") or "").strip()
+        if not selected_line and account_lines:
+            selected_line = account_lines[0]
+        parsed = self._parse_account_line(selected_line)
+        self.email = str(parsed.get("email") or entry.get("email") or entry.get("address") or "").strip()
+        self.password = str(parsed.get("password") or entry.get("password") or "").strip()
+        self.client_id = str(parsed.get("client_id") or entry.get("client_id") or "").strip()
+        self.refresh_token = str(parsed.get("refresh_token") or entry.get("refresh_token") or "").strip()
+        self.tenant = str(entry.get("tenant") or self._default_tenant(self.email)).strip() or "common"
+        self.imap_host = str(entry.get("imap_host") or "outlook.office365.com").strip()
+        self.imap_port = int(entry.get("imap_port") or 993)
+        self.folder = str(entry.get("folder") or "INBOX").strip() or "INBOX"
+        self.plus_alias = bool(entry.get("plus_alias", True))
+        self.max_aliases = max(0, int(entry.get("max_aliases") or 0))
+        self.account_line = selected_line
+        self.account_lines = account_lines
+        self.session = None
+        if not self.email:
+            raise RuntimeError("Outlook provider requires email")
+        if not self.password and not (self.client_id and self.refresh_token):
+            raise RuntimeError("Outlook provider requires password/app password or client_id+refresh_token")
+
+    @staticmethod
+    def _parse_account_line(value: str) -> dict[str, str]:
+        text = str(value or "").strip()
+        if not text:
+            return {}
+        parts = [item.strip() for item in text.split("----")]
+        if len(parts) < 4:
+            return {}
+        return {
+            "email": parts[0],
+            "password": parts[1],
+            "client_id": parts[2],
+            "refresh_token": "----".join(parts[3:]).strip(),
+        }
+
+    @staticmethod
+    def _default_tenant(email: str) -> str:
+        domain = str(email or "").lower().partition("@")[2]
+        if domain in {"outlook.com", "hotmail.com", "live.com", "msn.com"}:
+            return "consumers"
+        return "common"
+
+    def _token_endpoint(self) -> str:
+        return f"https://login.microsoftonline.com/{self.tenant}/oauth2/v2.0/token"
+
+    def _acquire_access_token(self) -> str:
+        if not self.client_id or not self.refresh_token:
+            raise RuntimeError("Outlook OAuth requires client_id and refresh_token")
+        resp = requests.post(
+            self._token_endpoint(),
+            data={
+                "client_id": self.client_id,
+                "refresh_token": self.refresh_token,
+                "grant_type": "refresh_token",
+                "scope": "https://outlook.office.com/IMAP.AccessAsUser.All offline_access",
+            },
+            impersonate="chrome",
+            verify=False,
+            timeout=self.conf["request_timeout"],
+        )
+        if resp.status_code != 200:
+            detail = resp.text[:400]
+            raise RuntimeError(f"Outlook OAuth token refresh failed: HTTP {resp.status_code}, body={detail}")
+        data = resp.json()
+        if not isinstance(data, dict):
+            raise RuntimeError("Outlook OAuth token response is not an object")
+        access_token = str(data.get("access_token") or "").strip()
+        if not access_token:
+            raise RuntimeError(f"Outlook OAuth token response missing access_token: {json.dumps(data, ensure_ascii=False)[:400]}")
+        new_refresh_token = str(data.get("refresh_token") or "").strip()
+        if new_refresh_token:
+            self.refresh_token = new_refresh_token
+        return access_token
+
+    def _xoauth2_auth_string(self, access_token: str) -> bytes:
+        return f"user={self.email}\x01auth=Bearer {access_token}\x01\x01".encode("utf-8")
+
+    def _connect(self):
+        if self.session is not None:
+            return self.session
+        client = imaplib.IMAP4_SSL(self.imap_host, self.imap_port, timeout=self.conf["request_timeout"])
+        if self.client_id and self.refresh_token:
+            access_token = self._acquire_access_token()
+            client.authenticate("XOAUTH2", lambda _: self._xoauth2_auth_string(access_token))
+        else:
+            client.login(self.email, self.password)
+        status, _ = client.select(self.folder, readonly=True)
+        if status != "OK":
+            raise RuntimeError(f"Outlook IMAP select folder failed: {self.folder}")
+        self.session = client
+        return client
+
+    def create_mailbox(self, username: str | None = None) -> dict[str, Any]:
+        address = self.email
+        if self.plus_alias:
+            if self.max_aliases > 0 and count_records_for_base(self.email) >= self.max_aliases:
+                raise RuntimeError(f"Outlook alias limit reached for {self.email}")
+            local_part, sep, domain = self.email.partition("@")
+            if sep and domain:
+                suffix = username or _random_mailbox_name()
+                address = f"{local_part}+{suffix}@{domain}"
+        return {
+            "provider": self.name,
+            "provider_ref": self.provider_ref,
+            "address": address,
+            "base_address": self.email,
+            "account_line": self.account_line,
+            "created_at": time.time(),
+        }
+
+    @staticmethod
+    def _content_from_message(parsed) -> tuple[str, str]:
+        plain: list[str] = []
+        html: list[str] = []
+        parts = parsed.walk() if parsed.is_multipart() else [parsed]
+        for part in parts:
+            if part.get_content_maintype() == "multipart":
+                continue
+            try:
+                payload = part.get_content()
+            except Exception:
+                continue
+            if not payload:
+                continue
+            if part.get_content_type() == "text/html":
+                html.append(str(payload))
+            elif part.get_content_type() == "text/plain":
+                plain.append(str(payload))
+        return "\n".join(plain).strip(), "\n".join(html).strip()
+
+    def _fetch_message(self, message_id: bytes) -> dict[str, Any] | None:
+        client = self._connect()
+        status, data = client.fetch(message_id, "(RFC822)")
+        if status != "OK" or not data:
+            return None
+        raw_bytes = b""
+        for item in data:
+            if isinstance(item, tuple) and len(item) >= 2:
+                raw_bytes = item[1] or b""
+                break
+        if not raw_bytes:
+            return None
+        raw_text = raw_bytes.decode("utf-8", errors="replace")
+        try:
+            parsed = message_from_string(raw_text, policy=policy.default)
+        except Exception:
+            return None
+        text_content, html_content = self._content_from_message(parsed)
+        return {
+            "provider": self.name,
+            "mailbox": self.email,
+            "message_id": message_id.decode("ascii", errors="ignore"),
+            "subject": str(parsed.get("Subject") or ""),
+            "sender": str(parsed.get("From") or ""),
+            "text_content": text_content,
+            "html_content": html_content,
+            "received_at": _parse_received_at(parsed.get("Date")),
+            "to": str(parsed.get("To") or ""),
+            "raw": raw_text,
+        }
+
+    def fetch_latest_message(self, mailbox: dict[str, Any]) -> dict[str, Any] | None:
+        client = self._connect()
+        status, data = client.search(None, "ALL")
+        if status != "OK" or not data or not data[0]:
+            return None
+        ids = data[0].split()
+        target_address = str(mailbox.get("address") or self.email).strip()
+        created_at = float(mailbox.get("created_at") or 0)
+        for message_id in reversed(ids[-30:]):
+            message = self._fetch_message(message_id)
+            if not message:
+                continue
+            received_at = message.get("received_at")
+            if isinstance(received_at, datetime) and created_at:
+                if received_at.timestamp() < created_at - 120:
+                    continue
+            if _message_matches_email(message, target_address):
+                return message
+        return None
+
+    def close(self) -> None:
+        if self.session is None:
+            return
+        try:
+            self.session.close()
+        except Exception:
+            pass
+        try:
+            self.session.logout()
+        except Exception:
+            pass
+        self.session = None
 
 
 class CloudflareTempMailProvider(BaseMailProvider):
@@ -917,12 +1138,27 @@ def _entries(mail_config: dict) -> list[dict]:
     result: list[dict] = []
     counters: dict[str, int] = {}
     for item in mail_config["providers"]:
-        idx = len(result) + 1
-        t = item.get("type", "")
-        cnt = counters.get(t, 0) + 1
-        counters[t] = cnt
-        label = f"DDG-{cnt}" if t == "ddg_mail" else f"{t}#{idx}"
-        result.append({**item, "provider_ref": f"{item['type']}#{idx}", "label": label})
+        provider_type = str(item.get("type") or "").strip()
+        expanded_items = [dict(item)]
+        if provider_type == "outlook":
+            account_lines = _normalize_multiline_account_lines(item.get("account_lines"))
+            if not account_lines:
+                single_line = str(item.get("account_line") or "").strip()
+                if single_line:
+                    account_lines = [single_line]
+            if account_lines:
+                expanded_items = [{**dict(item), "_selected_account_line": line} for line in account_lines]
+        for expanded in expanded_items:
+            idx = len(result) + 1
+            t = expanded.get("type", "")
+            cnt = counters.get(t, 0) + 1
+            counters[t] = cnt
+            label = f"DDG-{cnt}" if t == "ddg_mail" else f"{t}#{idx}"
+            if t == "outlook" and expanded.get("_selected_account_line"):
+                parsed = OutlookMailProvider._parse_account_line(str(expanded.get("_selected_account_line") or "").strip())
+                if parsed.get("email"):
+                    label = f"{t}:{parsed['email']}"
+            result.append({**expanded, "provider_ref": f"{expanded['type']}#{idx}", "label": label})
     return result
 
 
@@ -952,6 +1188,8 @@ def _create_provider(mail_config: dict, provider: str = "", provider_ref: str = 
         return CloudMailGenProvider(entry, conf)
     if entry["type"] == "cloudflare_temp_email":
         return CloudflareTempMailProvider(entry, conf)
+    if entry["type"] == "outlook":
+        return OutlookMailProvider(entry, conf)
     if entry["type"] == "ddg_mail":
         return DDGMailProvider(entry, conf)
     if entry["type"] == "tempmail_lol":
@@ -984,11 +1222,11 @@ def create_mailbox(mail_config: dict, username: str | None = None) -> dict:
             return mailbox
         except RuntimeError as error:
             last_error = str(error)
-            if "DDG日上限已达" not in last_error:
+            if "Outlook alias limit reached" not in last_error and "DDG" not in last_error:
                 raise
         finally:
             provider.close()
-    raise RuntimeError(last_error or "所有启用的邮箱提供商均无法创建邮箱")
+    raise RuntimeError(last_error or "all enabled mail providers failed to create mailbox")
 
 
 def wait_for_code(mail_config: dict, mailbox: dict) -> str | None:

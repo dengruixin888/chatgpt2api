@@ -5,10 +5,11 @@ import json
 
 from fastapi import APIRouter, Header
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.support import require_admin
 from services.register_service import register_service
+from services.register.recovery_service import recover_outlook_pool
 
 
 class RegisterConfigRequest(BaseModel):
@@ -21,6 +22,10 @@ class RegisterConfigRequest(BaseModel):
     target_quota: int | None = None
     target_available: int | None = None
     check_interval: int | None = None
+
+
+class OutlookRecoveryRequest(BaseModel):
+    account_lines: list[str] = Field(default_factory=list)
 
 
 def create_router() -> APIRouter:
@@ -50,6 +55,11 @@ def create_router() -> APIRouter:
     async def reset_register(authorization: str | None = Header(default=None)):
         require_admin(authorization)
         return {"register": register_service.reset()}
+
+    @router.post("/api/register/outlook/recover")
+    async def recover_outlook_accounts(body: OutlookRecoveryRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return {"result": recover_outlook_pool(body.account_lines)}
 
     @router.get("/api/register/events")
     async def register_events(token: str = ""):

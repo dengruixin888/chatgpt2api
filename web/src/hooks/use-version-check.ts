@@ -6,8 +6,8 @@ import { toast } from "sonner";
 import webConfig from "@/constants/common-env";
 import { parseChangelog, type ReleaseInfo } from "@/lib/release";
 
-const latestVersionUrl = "https://raw.githubusercontent.com/dengruixin888/chatgpt2api/main/VERSION";
-const latestChangelogUrl = "https://raw.githubusercontent.com/dengruixin888/chatgpt2api/main/CHANGELOG.md";
+const latestVersionUrl = "https://raw.githubusercontent.com/basketikun/chatgpt2api/main/VERSION";
+const latestChangelogUrl = "https://raw.githubusercontent.com/basketikun/chatgpt2api/main/CHANGELOG.md";
 const notifiedVersionKey = "chatgpt2api_version_notified";
 
 function readLocalReleases(): ReleaseInfo[] {

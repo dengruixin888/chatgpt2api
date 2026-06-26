@@ -18,6 +18,7 @@ from curl_cffi import requests
 
 from services.account_service import account_service
 from services.register import mail_provider
+from services.register.recovery_store import record_registered_account
 
 base_dir = Path(__file__).resolve().parent
 config = {
@@ -495,11 +496,13 @@ class PlatformRegistrar:
         return {
             "email": email,
             "password": password,
+            "mailbox_password": str(mailbox.get("password") or "").strip(),
             "access_token": str(tokens.get("access_token") or "").strip(),
             "refresh_token": str(tokens.get("refresh_token") or "").strip(),
             "id_token": str(tokens.get("id_token") or "").strip(),
             "source_type": "web",
             "created_at": datetime.now(timezone.utc).isoformat(),
+            "_mailbox": mailbox,
         }
 
 
@@ -513,6 +516,9 @@ def worker(index: int) -> dict:
         cost = time.time() - start
         access_token = str(result["access_token"])
         account_service.add_account_items([result])
+        mailbox = result.pop("_mailbox", None)
+        if isinstance(mailbox, dict):
+            record_registered_account(mailbox, result)
         refresh_result = account_service.refresh_accounts([access_token])
         if refresh_result.get("errors"):
             step(index, f"账号已保存，刷新状态暂未成功，稍后可重试: {refresh_result['errors']}", "yellow")

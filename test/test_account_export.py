@@ -3,7 +3,7 @@ import json
 import unittest
 from typing import Any
 
-from api.accounts import _refresh_tokens_md_bytes
+from api.accounts import _credentials_lines_bytes, _refresh_tokens_md_bytes
 from services.account_service import AccountService
 
 
@@ -148,6 +148,29 @@ class AccountExportTests(unittest.TestCase):
         )
 
         self.assertEqual(content.decode("utf-8"), "rt_one\nrt_two\n")
+
+    def test_credentials_lines_bytes_export_shape(self) -> None:
+        content = _credentials_lines_bytes(
+            [
+                {
+                    "email": "account@example.com",
+                    "password": "account-pass",
+                    "mailbox_password": "mail-pass",
+                    "refresh_token": "rt_one",
+                },
+                {
+                    "email": "no-mail@example.com",
+                    "password": "account-pass-2",
+                    "refresh_token": "rt_two",
+                },
+            ]
+        )
+
+        self.assertEqual(
+            content.decode("utf-8"),
+            "account@example.com----account-pass----mail-pass----rt_one\n"
+            "no-mail@example.com----account-pass-2--------rt_two\n",
+        )
 
 
 if __name__ == "__main__":

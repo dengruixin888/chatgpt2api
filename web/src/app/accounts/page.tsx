@@ -164,6 +164,70 @@ function maskToken(token?: string) {
   return `${token.slice(0, 16)}...${token.slice(-8)}`;
 }
 
+function isLikelyJwt(token?: string) {
+  return Boolean(token && token.split(".").length >= 3);
+}
+
+function accountDedupeKey(account: Account) {
+  const email = String(account.email || "").trim().toLowerCase();
+  return email ? `email:${email}` : `token:${account.access_token}`;
+}
+
+function buildAccountFormatCheck(accounts: Account[]) {
+  const duplicateKeys = new Set<string>();
+  const seen = new Map<string, number>();
+  let missingEmail = 0;
+  let invalidToken = 0;
+  let invalidQuota = 0;
+
+  for (const account of accounts) {
+    const key = accountDedupeKey(account);
+    seen.set(key, (seen.get(key) || 0) + 1);
+    if (!String(account.email || "").trim()) missingEmail += 1;
+    if (!isLikelyJwt(account.access_token)) invalidToken += 1;
+    if (!Number.isFinite(Number(account.quota)) || Number(account.quota) < 0) invalidQuota += 1;
+  }
+
+  for (const [key, count] of seen.entries()) {
+    if (count > 1) duplicateKeys.add(key);
+  }
+
+  const issueCount = duplicateKeys.size + missingEmail + invalidToken + invalidQuota;
+  return {
+    total: accounts.length,
+    valid: Math.max(0, accounts.length - issueCount),
+    duplicateGroups: duplicateKeys.size,
+    duplicateAccounts: accounts.filter((account) => duplicateKeys.has(accountDedupeKey(account))).length,
+    missingEmail,
+    invalidToken,
+    invalidQuota,
+    issueCount,
+  };
+}
+
+function duplicateTokensToRemove(accounts: Account[]) {
+  const groups = new Map<string, Account[]>();
+  for (const account of accounts) {
+    const key = accountDedupeKey(account);
+    groups.set(key, [...(groups.get(key) || []), account]);
+  }
+
+  const tokens: string[] = [];
+  for (const group of groups.values()) {
+    if (group.length <= 1) continue;
+    const keep =
+      group.find((account) => account.status === "正常") ||
+      group.find((account) => account.quota > 0) ||
+      group[0];
+    for (const account of group) {
+      if (account.access_token !== keep.access_token) {
+        tokens.push(account.access_token);
+      }
+    }
+  }
+  return tokens;
+}
+
 async function downloadAccounts(accounts: Account[], format: AccountExportFormat) {
   const tokens = accounts.map((account) => account.access_token);
   const blob = await exportAccounts(tokens, format);
@@ -179,6 +243,8 @@ async function downloadAccounts(accounts: Account[], format: AccountExportFormat
           ? `accounts-${Date.now()}.zip`
           : format === "refresh"
             ? `refresh-tokens-${Date.now()}.md`
+            : format === "credentials"
+              ? `account-credentials-${Date.now()}.txt`
           : `accounts-${Date.now()}.json`;
   link.click();
   URL.revokeObjectURL(url);
@@ -221,6 +287,7 @@ function AccountsPageContent() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isRelogining, setIsRelogining] = useState(false);
+  const [isDeduping, setIsDeduping] = useState(false);
   const [progress, setProgress] = useState<{
     visible: boolean;
     current: number;
@@ -324,6 +391,9 @@ function AccountsPageContent() {
     return accounts.filter((item) => selectedSet.has(item.access_token)).map((item) => item.access_token);
   }, [accounts, selectedIds]);
 
+  const formatCheck = useMemo(() => buildAccountFormatCheck(accounts), [accounts]);
+  const duplicateRemoveTokens = useMemo(() => duplicateTokensToRemove(accounts), [accounts]);
+
   const abnormalTokens = useMemo(() => {
     return accounts.filter((item) => item.status === "异常").map((item) => item.access_token);
   }, [accounts]);
@@ -359,6 +429,26 @@ function AccountsPageContent() {
       toast.error(message);
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleAutoDeduplicate = async () => {
+    if (duplicateRemoveTokens.length === 0) {
+      toast.success("未发现重复账号");
+      return;
+    }
+
+    setIsDeduping(true);
+    try {
+      const data = await deleteAccounts(duplicateRemoveTokens);
+      setAccounts(data.items);
+      setSelectedIds((prev) => prev.filter((id) => data.items.some((item) => item.access_token === id)));
+      toast.success(`自动去重完成，移除 ${data.removed ?? duplicateRemoveTokens.length} 个重复账号`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "自动去重失败";
+      toast.error(message);
+    } finally {
+      setIsDeduping(false);
     }
   };
 
@@ -787,6 +877,16 @@ function AccountsPageContent() {
               setPage(1);
             }}
           />
+          <Button
+            variant="outline"
+            className="h-10 rounded-xl border-stone-200 bg-white/80 px-4 text-stone-700 hover:bg-white"
+            onClick={() => void handleAutoDeduplicate()}
+            disabled={isLoading || isRefreshing || isDeleting || isDeduping || duplicateRemoveTokens.length === 0}
+            title="按邮箱优先去重；无邮箱时按 token 去重，保留正常/有额度的那条"
+          >
+            {isDeduping ? <LoaderCircle className="size-4 animate-spin" /> : <Copy className="size-4" />}
+            自动去重
+          </Button>
           <Popover open={exportOpen} onOpenChange={setExportOpen}>
             <PopoverTrigger asChild>
               <Button
@@ -844,10 +944,37 @@ function AccountsPageContent() {
                 <FileJson className="size-4" />
                 导出 Refresh Token
               </button>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-stone-700 transition hover:bg-stone-100"
+                onClick={() => {
+                  setExportOpen(false);
+                  void downloadAccounts(accounts, "credentials");
+                }}
+              >
+                <FileJson className="size-4" />
+                导出账密格式
+              </button>
             </PopoverContent>
           </Popover>
         </div>
       </section>
+
+      <Card className="rounded-2xl border-white/80 bg-white/90 shadow-sm">
+        <CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="text-sm font-medium text-stone-800">格式校验结果</div>
+            <div className="mt-1 text-sm text-stone-500">
+              共 {formatCheck.total} 个账号，重复组 {formatCheck.duplicateGroups} 个
+              {formatCheck.duplicateAccounts ? `（涉及 ${formatCheck.duplicateAccounts} 条）` : ""}，缺邮箱 {formatCheck.missingEmail} 个，
+              token 格式异常 {formatCheck.invalidToken} 个，额度异常 {formatCheck.invalidQuota} 个。
+            </div>
+          </div>
+          <Badge variant={formatCheck.issueCount === 0 ? "success" : "warning"} className="w-fit rounded-lg px-2 py-1">
+            {formatCheck.issueCount === 0 ? "校验通过" : "存在需处理项"}
+          </Badge>
+        </CardContent>
+      </Card>
 
       {/* 进度条 */}
       {progress.visible && (

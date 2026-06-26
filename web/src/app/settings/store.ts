@@ -743,7 +743,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set((state) => state.registerConfig ? {
       registerConfig: {
         ...state.registerConfig,
-        mail: { ...state.registerConfig.mail, [key]: Number(value) || 0 },
+        mail: key === "request_timeout" || key === "wait_timeout" || key === "wait_interval"
+          ? { ...state.registerConfig.mail, [key]: Number(value) || 0 }
+          : { ...state.registerConfig.mail, [key]: value },
       },
     } : {});
   },
@@ -756,7 +758,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
           ...state.registerConfig.mail,
           providers: [
             ...(state.registerConfig.mail.providers || []),
-            { enable: true, type: "cloudmail_gen", api_base: "", admin_email: "", admin_password: "", domain: [], subdomain: [], email_prefix: "" },
+            { enable: true, type: "outlook", account_lines: "", account_line: "", email: "", password: "", client_id: "", refresh_token: "", tenant: "consumers", imap_host: "outlook.office365.com", imap_port: 993, folder: "INBOX", plus_alias: true },
           ],
         },
       },

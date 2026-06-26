@@ -84,7 +84,7 @@ type RefreshTokenImportResponse = {
   errors?: Array<{ refresh_token: string; error: string }>;
 };
 
-export type AccountExportFormat = "json" | "zip" | "cpa" | "sub" | "refresh";
+export type AccountExportFormat = "json" | "zip" | "cpa" | "sub" | "refresh" | "credentials";
 
 export type AccountRefreshResponse = {
   items: Account[];
@@ -280,6 +280,7 @@ export type RegisterConfig = {
     wait_timeout: number;
     wait_interval: number;
     providers: Array<Record<string, unknown>>;
+    [key: string]: unknown;
   };
   proxy: string;
   dynamic_proxy?: {
@@ -733,6 +734,19 @@ export async function resetRegister() {
   return httpRequest<{ register: RegisterConfig }>("/api/register/reset", { method: "POST" });
 }
 
+export async function recoverOutlookRegister(accountLines: string[]) {
+  return httpRequest<{
+    result: {
+      imported: Array<{ mailbox_base: string; email: string; added: number; skipped: number; refresh_errors: Array<Record<string, unknown>> }>;
+      missing: string[];
+      errors: Array<{ email: string; error: string }>;
+    };
+  }>("/api/register/outlook/recover", {
+    method: "POST",
+    body: { account_lines: accountLines },
+  });
+}
+
 // ── CPA (CLIProxyAPI) ──────────────────────────────────────────────
 
 export type CPAPool = {
@@ -928,5 +942,35 @@ export async function testProxy(url?: string) {
   return httpRequest<{ result: ProxyTestResult }>("/api/proxy/test", {
     method: "POST",
     body: { url: url ?? "" },
+  });
+}
+
+export async function fetchCurrentVersion() {
+  return httpRequest<{ version: string }>("/version", {
+    redirectOnUnauthorized: false,
+  });
+}
+
+export type UpdateStatus = {
+  available: boolean;
+  running: boolean;
+  status: "idle" | "running" | "success" | "failed" | string;
+  reason?: string;
+  error?: string;
+  workdir?: string;
+  base_dir?: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  logs?: Array<{ time: string; text: string }>;
+};
+
+export async function fetchUpdateStatus() {
+  return httpRequest<{ update: UpdateStatus }>("/api/system/update");
+}
+
+export async function startSelfUpdate() {
+  return httpRequest<{ update: UpdateStatus }>("/api/system/update/start", {
+    method: "POST",
+    body: { force: false },
   });
 }

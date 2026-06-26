@@ -65,7 +65,7 @@ class AccountRefreshRequest(BaseModel):
 
 class AccountExportRequest(BaseModel):
     access_tokens: list[str] = Field(default_factory=list)
-    format: Literal["json", "zip", "cpa", "sub", "refresh"] = "json"
+    format: Literal["json", "zip", "cpa", "sub", "refresh", "credentials"] = "json"
 
 
 class AccountUpdateRequest(BaseModel):
@@ -228,6 +228,18 @@ def _refresh_tokens_md_bytes(items: list[dict[str, str]]) -> bytes:
         if str(item.get("refresh_token") or "").strip()
     ]
     return ("\n".join(refresh_tokens) + ("\n" if refresh_tokens else "")).encode("utf-8")
+
+
+def _credentials_lines_bytes(items: list[dict[str, str]]) -> bytes:
+    lines = []
+    for item in items:
+        account = str(item.get("email") or "").strip()
+        account_password = str(item.get("password") or "").strip()
+        mailbox_password = str(item.get("mailbox_password") or item.get("email_password") or "").strip()
+        refresh_token = str(item.get("refresh_token") or "").strip()
+        if account or account_password or mailbox_password or refresh_token:
+            lines.append("----".join([account, account_password, mailbox_password, refresh_token]))
+    return ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
 
 
 def create_router() -> APIRouter:
@@ -426,6 +438,14 @@ def create_router() -> APIRouter:
                 content,
                 media_type="text/markdown; charset=utf-8",
                 headers={"Content-Disposition": f'attachment; filename="refresh-tokens-{timestamp}.md"'},
+            )
+
+        if body.format == "credentials":
+            content = _credentials_lines_bytes(items)
+            return Response(
+                content,
+                media_type="text/plain; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="account-credentials-{timestamp}.txt"'},
             )
 
         payload: dict[str, str] | list[dict[str, str]] = items[0] if len(items) == 1 else items

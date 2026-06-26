@@ -224,6 +224,9 @@ class AccountService:
         normalized["email"] = normalized.get("email") or None
         normalized["user_id"] = normalized.get("user_id") or None
         normalized["proxy"] = str(normalized.get("proxy") or "").strip()
+        normalized["mailbox_password"] = str(
+            normalized.get("mailbox_password") or normalized.get("email_password") or ""
+        ).strip()
         source_type = normalized.get("source_type")
         if not source_type and str(normalized.get("export_type") or "").strip().lower() == "codex":
             source_type = "codex"
@@ -1676,6 +1679,11 @@ class AccountService:
             password = str(account.get("password") or "").strip()
             if password:
                 item["password"] = password
+            mailbox_password = str(
+                account.get("mailbox_password") or account.get("email_password") or ""
+            ).strip()
+            if mailbox_password:
+                item["mailbox_password"] = mailbox_password
             items.append(item)
         return items
 
