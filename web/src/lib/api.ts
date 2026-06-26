@@ -944,33 +944,3 @@ export async function testProxy(url?: string) {
     body: { url: url ?? "" },
   });
 }
-
-export async function fetchCurrentVersion() {
-  return httpRequest<{ version: string }>("/version", {
-    redirectOnUnauthorized: false,
-  });
-}
-
-export type UpdateStatus = {
-  available: boolean;
-  running: boolean;
-  status: "idle" | "running" | "success" | "failed" | string;
-  reason?: string;
-  error?: string;
-  workdir?: string;
-  base_dir?: string;
-  started_at?: string | null;
-  finished_at?: string | null;
-  logs?: Array<{ time: string; text: string }>;
-};
-
-export async function fetchUpdateStatus() {
-  return httpRequest<{ update: UpdateStatus }>("/api/system/update");
-}
-
-export async function startSelfUpdate() {
-  return httpRequest<{ update: UpdateStatus }>("/api/system/update/start", {
-    method: "POST",
-    body: { force: false },
-  });
-}

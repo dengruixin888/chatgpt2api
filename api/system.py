@@ -26,7 +26,6 @@ from services.image_storage_service import ImageStorageError, image_storage_serv
 from services.image_tags_service import delete_tag, get_all_tags, set_tags
 from services.log_service import log_service
 from services.proxy_service import test_proxy
-from services.update_service import update_service
 
 
 class SettingsUpdateRequest(BaseModel):
@@ -54,10 +53,6 @@ class LogDeleteRequest(BaseModel):
     ids: list[str] = []
 class BackupDeleteRequest(BaseModel):
     key: str = ""
-
-
-class UpdateStartRequest(BaseModel):
-    force: bool = False
 
 
 def create_router(app_version: str) -> APIRouter:
@@ -93,19 +88,6 @@ def create_router(app_version: str) -> APIRouter:
     @router.get("/version")
     async def get_version():
         return {"version": app_version}
-
-    @router.get("/api/system/update")
-    async def get_update_status(authorization: str | None = Header(default=None)):
-        require_admin(authorization)
-        return {"update": update_service.get_status()}
-
-    @router.post("/api/system/update/start")
-    async def start_update(body: UpdateStartRequest, authorization: str | None = Header(default=None)):
-        require_admin(authorization)
-        try:
-            return {"update": update_service.start()}
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
 
     @router.get("/api/settings")
     async def get_settings(authorization: str | None = Header(default=None)):
